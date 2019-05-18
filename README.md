@@ -5,4 +5,5 @@ A Python native multi-class desktop GUI built with Tkinter to measure the reacti
   * insert trials to perform
   * press enter to start the experiment
   * press the spacebar as fastest as possible at hearing the sound
+  * plot results
   * save results to excel file
