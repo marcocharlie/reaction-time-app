@@ -24,9 +24,9 @@ except:
     import pyaudio
 
     class Beep():
-        def __init__(self, freq, duration):
+        def __init__(self, freq, duration, volume):
             self.fs = 44100 # sampling rate, Hz, must be integer
-            self.volume = 1.
+            self.volume = volume
             self.freq = freq
             self.duration = duration/300 # in seconds. es.: 1500ms/300 = 5s
 
@@ -51,12 +51,17 @@ except:
 class Timer(threading.Thread):
     def __init__(self, mainapp, max_beep):
         threading.Thread.__init__(self)
-        self.count = 0
         self.interval = threading.Event()
         self.max_beep = max_beep
         self.mainapp = mainapp
+        self.count = self.mainapp.stopped
 
     def playSound(self):
+        
+        def func(): 
+            #Beep(500, 1500) # 1500 ms with winsound
+            Beep(500, 1500, 1.) # 5s with pyaudio
+            
         self.start_time = time()
         self.mainapp.start = self.start_time # self.start
         self.count += 1
@@ -65,16 +70,15 @@ class Timer(threading.Thread):
         self.mainapp.listbox.insert(tk.END, 'Test '+str(self.mainapp.tests)+' started at '+datetime.fromtimestamp(self.mainapp.start).strftime('%H:%M:%S.%f'))
         self.mainapp.listbox.see("end")
         self.mainapp.tests_summary['Test '+str(self.mainapp.tests)+' start'] = datetime.fromtimestamp(self.mainapp.start).strftime('%H:%M:%S.%f')
-
-        def func(): 
-            #Beep(500, 1500) # 1500 ms with winsound
-            Beep(500, 1500) # 5s with pyaudio
         threading.Thread(target=func).start()
 
     def run(self):
-        while not self.interval.wait(uniform(3, 8)):
-            if self.count < self.max_beep:
+        while not self.interval.wait(uniform(2.9, 3.6)):
+            if self.count < self.max_beep and self.mainapp.pause == False:
                 self.playSound()
+            elif self.mainapp.pause == True:
+                self.interval.set()
+                self.mainapp.stopped = self.count
             else:
                 self.interval.set()
 
@@ -91,12 +95,14 @@ class ReactionTimeApp(tk.Tk):
         self.data = {
             "First Name": tk.StringVar(),
             "Last Name": tk.StringVar(),
+            "Version": tk.StringVar(),
             #"Max Tests": tk.IntVar(),
             "Experiment start": tk.StringVar(),
             "Experiment end": tk.StringVar(),
             "Experiment time": tk.DoubleVar(),
             "Tests": tk.IntVar(),
             "Errors": tk.IntVar(),
+            "Anticipations": tk.IntVar(),
             "Missing records": tk.IntVar(),
             "AVG reaction time": tk.DoubleVar(),
         }
@@ -107,10 +113,10 @@ class ReactionTimeApp(tk.Tk):
         self.configure()
         self.geometry("700x500")
         
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.protocol("WM_DELETE_WINDOW", self.popup_destroy)
                 
-        self.bind_all('<Escape>', lambda x: self.popup_destroy())
-        tk.Label(self, text="Press Esc to close the window", font=('Verdena', 8)).pack(side='bottom')
+        #self.bind_all('<Escape>', lambda x: self.popup_destroy())
+        #tk.Label(self, text="Press Esc to close the window", font=('Verdena', 8)).pack(side='bottom')
         
         self.title_font = tkfont.Font(family='Verdena', size=14) #, weight="bold", slant="italic")
         
@@ -144,7 +150,7 @@ class ReactionTimeApp(tk.Tk):
         self.config(menu=self.menubar)
 
         self.frames = {}
-        for F in (StartPage, EntryName, EntryTests, Experiment, ReactionTest): #, Results):
+        for F in (StartPage, EntryName, EntryTests, Experiment, HardReactionTest, SoftReactionTest):
             page_name = F.__name__
             frame = F(parent=container, controller=self)
             self.frames[page_name] = frame
@@ -193,23 +199,14 @@ class ReactionTimeApp(tk.Tk):
     def popup_destroy(self):
         #if askyesno('Esc', 'You are about to close the app. Any unsaved results will be lost!'):
         if self.saved == False:
+            #if askokcancel('Esc', 'Are you sure you want to close the program without save the results?'):
             if askyesno('Esc', 'Are you sure you want to close the program without save the results?'):
                 self.destroy()
             else:
                 self.save_data()
         else:
             self.destroy()
-            
-    def on_closing(self):
-        #if askokcancel("Esc", "You are about to close the app. Any unsaved results will be lost!"):
-        if self.saved == False:
-            if askokcancel('Esc', 'Are you sure you want to close the program without save the results?'):
-                self.destroy()
-            else:
-                self.save_data()
-        else:
-            self.destroy()
-            
+                        
     def create_plot(self):
         
         self.window.df = self.window.dati[[column for column in list(self.window.dati.columns) if 'elapsed' in column]]\
@@ -231,7 +228,8 @@ class ReactionTimeApp(tk.Tk):
 
         # mean line
         # missing records will be ignored as NaN
-        self.window.mean = self.window.df['Reaction Time'].mean()
+        #self.window.mean = self.window.df['Reaction Time'].mean()
+        self.window.mean = self.data['AVG reaction time'].get()
         self.window.ax.axhline(y=self.window.mean, label='AVG Reaction Time', linestyle='--', color='red')
         self.window.ax.legend()
             
@@ -266,34 +264,7 @@ class ReactionTimeApp(tk.Tk):
         self.window.dati = pd.DataFrame([self.plot_data], columns=list(self.plot_data.keys()))
 
         self.create_plot()
-        
-    '''def show_data(self):
-        self.window = tk.Toplevel(self)
-        self.window.geometry("1000x100")
-        
-        self.window.grab_set()
-        
-        self.window.scrollbar = ttk.Scrollbar(self.window, orient="horizontal") 
-        self.window.table = ttk.Treeview(self.window, height=28, columns=list(self.data.keys()), 
-                                         selectmode="extended", xscrollcommand=self.window.scrollbar.set)
-        self.window.scrollbar.config(command=self.window.table.xview)
-        self.window.scrollbar.pack(side="bottom", fill="x")
-        
-        self.window.table.heading('#0', text='Index', anchor='center')
-        self.window.table.column('#0', stretch=True, minwidth=50, width=130)
-        self.window.column_count = 0
-        for k in self.data.keys():
-            self.window.column_count += 1
-            self.window.table.heading('#'+str(self.window.column_count), text=str(k), anchor='center')
-            self.window.table.column('#'+str(self.window.column_count), stretch=True, minwidth=50, width=130)
-        self.window.table.insert('', 'end', text=0, values=[self.data[k].get() for k in self.data.keys()])               
 
-        #self.window.table.heading('#0', text='data', anchor='center')
-        #self.window.table.column('#0', stretch='yes', minwidth=50, width=100)
-        #for k, v in self.data.items():
-        #    self.window.table.insert('', 'end', text=str(k), values=(self.data[k].get())) 
-
-        self.window.table.pack()'''
         
 class StartPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -372,38 +343,41 @@ class Experiment(tk.Frame):
         #label = tk.Label(self, text="\nOK, It's all set!\nYou are going to perform "+str(self.controller.data['Max Tests'])+" tests\n\nAre you ready?", font=controller.title_font)
         label = tk.Label(self, text="\nOK, it's all set!\nAre you ready?", font=controller.title_font)
         label.pack(side="top", fill="x", pady=10)
-        button = ttk.Button(self, text="Ready!", command=lambda: controller.show_frame("ReactionTest"))
+        ttk.Button(self, text="Ready for the simple version!", command=lambda: controller.show_frame("SoftReactionTest")).pack()
+        ttk.Button(self, text="Ready for the difficult version!", command=lambda: controller.show_frame("HardReactionTest")).pack()
         button2 = ttk.Button(self, text="Go back", command=lambda: controller.show_frame("EntryTests"))
-        button.pack()
         button2.pack(side='bottom')
 
-class ReactionTest(tk.Frame):
+class HardReactionTest(tk.Frame):
     def __init__(self, parent, controller):
         tk.Frame.__init__(self, parent)
         self.controller = controller
+        self.controller.data['Version'].set('Difficult')
         
         self.results = []
         self.tests_summary = {}
         self.tests = 0
         self.errors = 0
+        self.anticipations = 0
         self.start = None
         self.end = None
         self.start_exp = None
         self.end_exp = None
         self.first_input = 0
+        self.stopped = 0
+        self.pause = False
+        
+        self.bind('<Escape>', lambda x: self.stop_save())
+        tk.Label(self, text="Press Esc to stop the experiment", font=('Verdena', 8)).pack(side='bottom')
                        
-        label = tk.Label(self, text="\nReaction Time Test\n\nPress Enter to start the test.\nPress the Spacebar as soon as you hear the beep!", font=controller.title_font)
+        label = tk.Label(self, text="\nReaction Time Test\n\nPress Enter to start the test.\nPress the Spacebar as soon as you hear the beep!\nPress the 's' key to pause the experiment.\nPress the 'r' key to resume the experiment.\n", font=controller.title_font)
         label.pack(side="top", fill="x", pady=10)
-        #ttk.Button(self, text="View graph", command=lambda: self.controller.show_frame("Results")).pack()
         ttk.Button(self, text="View graph", command=self.controller.show_graph).pack()
-        #ttk.Button(self, text="View data", command=self.controller.show_data).pack()
         self.data = {}
-        
         tk.Label(self, text='\nResults:\n', font=('Verdena', 10)).pack()
-        
+
         # results in a listbox with scrollbar
-        list_font = tkfont.Font(size=12)
-        
+        list_font = tkfont.Font(size=12)        
         self.scrollbar = ttk.Scrollbar(self, orient="vertical")     
         self.listbox = tk.Listbox(self, font=list_font, yscrollcommand=self.scrollbar.set)
         self.scrollbar.config(command=self.listbox.yview)
@@ -412,24 +386,60 @@ class ReactionTest(tk.Frame):
         
         # bind works just on this frame due to -> frame.focus_set()
         self.bind('<KeyPress>', self.reaction_test)
+    
+    def stop_save(self):
+        if askyesno('Stop', 'You stopped the experiment. Are you sure you want to close the program without save the results?'):
+            self.destroy()
+        else:
+            self.end_exp = time()
+            self.validate_results = [value for value in self.results if value > 0.15]
+            for k, v in self.tests_summary.items():
+                self.controller.data[k].set(v)                    
+            self.controller.data['Experiment end'].set(datetime.fromtimestamp(self.end_exp).strftime('%H:%M:%S.%f'))
+            self.controller.data['Experiment time'].set(round(self.end_exp - self.start_exp, 3))
+            self.controller.data['Errors'].set(self.errors)
+            self.controller.data['Anticipations'].set(self.anticipations)
+            self.controller.data['Missing records'].set(self.tests-len(self.results))
+            self.controller.data['AVG reaction time'].set(round(mean(self.validate_results)*1000, 3))
+            self.controller.save_data()
+            self.controller.destroy()
+    
+    def pause_popup(self):
+        showinfo("Pause", "Experiment on pause!")
 
     def game(self):
+        
+        def anticipation(): 
+            Beep(250, 1500, 7.)
+            
         self.end = time()
         self.elapsed = self.end - self.start
-        self.results.append(self.elapsed)
-
-        #self.listbox.insert(tk.END, 'Test '+str(self.tests)+' started at '+datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f'))
-        self.listbox.insert(tk.END, 'Test '+str(self.tests)+' ended at '+datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f'))
-        self.listbox.insert(tk.END, 'Reaction time: '+str(round(self.elapsed*1000, 3))+' milliseconds')
-        #self.listbox.insert(tk.END, '')
-        self.listbox.see("end")
-        #self.tests_summary['Test '+str(self.tests)+' start'] = datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f')
+        
+        if self.elapsed > 0.15:
+            #self.listbox.insert(tk.END, 'Test '+str(self.tests)+' started at '+datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Test '+str(self.tests)+' ended at '+datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Reaction time: '+str(round(self.elapsed*1000, 3))+' milliseconds')
+            #self.listbox.insert(tk.END, '')
+            self.listbox.see("end")
+            #self.tests_summary['Test '+str(self.tests)+' start'] = datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f')
+        else:
+            threading.Thread(target=anticipation).start()
+            self.anticipations += 1
+            self.listbox.insert(tk.END, 'Test '+str(self.tests)+' ended at '+datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Reaction time: '+str(round(self.elapsed*1000, 3))+' milliseconds')
+            self.listbox.insert(tk.END, 'You were too fast and anticipated the sound!')
+            self.listbox.see("end")
+        
         self.tests_summary['Test '+str(self.tests)+' end'] = datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f')
         self.tests_summary['Test '+str(self.tests)+' elapsed'] = round(self.elapsed*1000, 3)
-                                                                               
+        self.results.append(self.elapsed)
         self.start = None
     
     def reaction_test(self, event):
+        
+        def press_error(): 
+                Beep(250, 300, 7.)
+                
         if event.keysym == 'Return':
             if self.tests == 0 and self.start_exp == None:
                 #self.tests += 1
@@ -446,23 +456,21 @@ class ReactionTest(tk.Frame):
                 pass
         elif event.keysym == 'space':
             #if self.tests == 0:
-            if self.start_exp == None:
+            if self.start_exp == None and self.pause == False:
                 if self.first_input == 0:
                     self.first_input += 1
                     self.listbox.insert(tk.END, 'Press Enter to start the test!')
                     self.listbox.insert(tk.END, '')
-                    #tk.Label(self, text ='Press 1 to start a new test.\n', bg='red', font=('Verdena', 12, 'bold italic')).pack()
                 else:
                     pass
-            #elif self.tests < self.controller.data['Max Tests'].get():
-            elif self.tests < self.controller.data['Tests'].get():
+            elif self.tests < self.controller.data['Tests'].get() and self.pause == False:
                 try:
                     self.game()
                     #self.after(randint(2000, 7000), self.playSound)
                     #self.tests +=1
                 except:
+                    threading.Thread(target=press_error).start()
                     self.errors +=1
-                    #tk.Label(self, text ='You pressed 2 before the beep! Be patient!\n', bg='red', font=('Verdena', 12, 'bold italic')).pack()
                     self.listbox.insert(tk.END, '')
                     self.listbox.insert(tk.END, 'You pressed the Spacebar before the beep! Be patient!')
                     self.listbox.see("end")
@@ -473,14 +481,17 @@ class ReactionTest(tk.Frame):
                     
                     # SUMMARY
                     self.end_exp = time()
+                    # excluding anticipations from avg reaction time
+                    self.validate_results = [value for value in self.results if value > 0.15]
                     
                     self.listbox.insert(tk.END, '')
                     self.listbox.insert(tk.END, 'Experiment concluded at '+datetime.fromtimestamp(self.end_exp).strftime('%H:%M:%S.%f'))
                     self.listbox.insert(tk.END, 'Experiment time: '+str(round(self.end_exp - self.start_exp, 3))+' seconds')
                     self.listbox.insert(tk.END, 'Number of tests: '+str(self.tests))
                     self.listbox.insert(tk.END, 'Number of errors: '+str(self.errors))
+                    self.listbox.insert(tk.END, 'Number of anticipations: '+str(self.anticipations))
                     self.listbox.insert(tk.END, 'Missing records: '+str(self.tests-len(self.results)))
-                    self.listbox.insert(tk.END, 'AVG reaction time: '+str(round(mean(self.results)*1000, 3))+' milliseconds')
+                    self.listbox.insert(tk.END, 'AVG reaction time: '+str(round(mean(self.validate_results)*1000, 3))+' milliseconds')
                     self.listbox.see("end")
                     for k, v in self.tests_summary.items():
                         self.controller.data[k].set(v)                    
@@ -489,53 +500,162 @@ class ReactionTest(tk.Frame):
                     self.controller.data['Experiment time'].set(round(self.end_exp - self.start_exp, 3))
                     #self.controller.data['Tests'].set(self.tests)
                     self.controller.data['Errors'].set(self.errors)
+                    self.controller.data['Anticipations'].set(self.anticipations)
                     self.controller.data['Missing records'].set(self.tests-len(self.results))
-                    self.controller.data['AVG reaction time'].set(round(mean(self.results)*1000, 3))
+                    self.controller.data['AVG reaction time'].set(round(mean(self.validate_results)*1000, 3))
                     
                     self.tests += 1 
                 except:
+                    threading.Thread(target=press_error).start()
                     self.errors +=1
-                    #print('You pressed 2 before the beep! Be patient!\n')
                     self.listbox.insert(tk.END, '')
                     self.listbox.insert(tk.END, 'You pressed the Spacebar before the beep! Be patient!')
                     self.listbox.see("end")
+        elif event.keysym == 's':
+            self.pause = True
+            self.pause_popup()
+        elif event.keysym == 'r':
+            self.pause = False
+            self.timer = Timer(self, self.controller.data['Tests'].get())
+            self.timer.start()
+        else:
+            pass
+    
+class SoftReactionTest(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.controller = controller
+        self.controller.data['Version'].set('Simple')
+        
+        self.results = []
+        self.tests_summary = {}
+        self.tests = 0
+        self.errors = 0
+        self.anticipations = 0
+        self.start = None
+        self.end = None
+        self.start_exp = None
+        self.end_exp = None
+                       
+        label = tk.Label(self, text="\nReaction Time Test\n\nPress Enter to start the test.\nPress the Spacebar as soon as you hear the beep!", font=controller.title_font)
+        label.pack(side="top", fill="x", pady=10)
+        ttk.Button(self, text="View graph", command=self.controller.show_graph).pack()
+        self.data = {}
+        tk.Label(self, text='\nResults:\n', font=('Verdena', 10)).pack()
+        
+        # results in a listbox with scrollbar
+        list_font = tkfont.Font(size=12)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical")     
+        self.listbox = tk.Listbox(self, font=list_font, yscrollcommand=self.scrollbar.set)
+        self.scrollbar.config(command=self.listbox.yview)
+        self.scrollbar.pack(side="right", fill="y")
+        self.listbox.pack(side='left', fill='both', expand=1)
+        
+        self.bind('<KeyPress>', self.reaction_test)
+        
+    def playSound(self):
+        self.start = time()
+        def func(): 
+            Beep(500, 1500, 1.)
+        threading.Thread(target=func).start()
+    
+    def game(self):
+        
+        def anticipation(): 
+            Beep(250, 1500, 7.)
+            
+        self.end = time()
+        self.elapsed = self.end - self.start
+        
+        if self.elapsed > 0.15:
+            self.listbox.insert(tk.END, 'Test '+str(self.tests)+' started at '+datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Test '+str(self.tests)+' ended at '+datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Reaction time: '+str(round(self.elapsed*1000, 3))+' milliseconds')
+            self.listbox.insert(tk.END, '')
+            self.listbox.see("end")
+        else:
+            threading.Thread(target=anticipation).start()
+            self.anticipations += 1
+            self.listbox.insert(tk.END, 'Test '+str(self.tests)+' ended at '+datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f'))
+            self.listbox.insert(tk.END, 'Reaction time: '+str(round(self.elapsed*1000, 3))+' milliseconds')
+            self.listbox.insert(tk.END, 'You were too fast and anticipated the sound!')
+            self.listbox.insert(tk.END, '')
+            self.listbox.see("end")
+        
+        self.tests_summary['Test '+str(self.tests)+' start'] = datetime.fromtimestamp(self.start).strftime('%H:%M:%S.%f')
+        self.tests_summary['Test '+str(self.tests)+' end'] = datetime.fromtimestamp(self.end).strftime('%H:%M:%S.%f')
+        self.tests_summary['Test '+str(self.tests)+' elapsed'] = round(self.elapsed*1000, 3)
+        self.results.append(self.elapsed)
+        self.start = None
+    
+    def reaction_test(self, event):
+        
+        def press_error(): 
+            Beep(250, 300, 7.)
+        
+        if event.keysym == 'Return':
+            if self.tests == 0:
+                self.start_exp = time()
+                self.tests += 1
+                self.after(randint(2900, 3600), self.playSound)
+                self.listbox.insert(tk.END, 'Experiment started at '+str(datetime.fromtimestamp(self.start_exp).strftime('%H:%M:%S.%f')))
+                self.listbox.insert(tk.END, '')
+                
+                self.controller.data['Experiment start'].set(datetime.fromtimestamp(self.start_exp).strftime('%H:%M:%S.%f'))
+            else:
+                pass
+        elif event.keysym == 'space':
+            if self.tests == 0:
+                self.listbox.insert(tk.END, 'Press Enter to start the test!')
+                self.listbox.insert(tk.END, '')
+                #tk.Label(self, text ='Press 1 to start a new test.\n', bg='red', font=('Verdena', 12, 'bold italic')).pack()
+            elif self.tests < self.controller.data['Tests'].get():
+                try:
+                    self.game()
+                    self.after(randint(2900, 3600), self.playSound)
+                    self.tests +=1
+                except:
+                    threading.Thread(target=press_error).start()
+                    self.errors +=1
+                    #tk.Label(self, text ='You pressed 2 before the beep! Be patient!\n', bg='red', font=('Verdena', 12, 'bold italic')).pack()
+                    self.listbox.insert(tk.END, 'You pressed the Spacebar before the beep! Be patient!')
+                    self.listbox.insert(tk.END, '')
+            elif self.tests == self.controller.data['Tests'].get():
+                try:
+                    self.game()
+                    # SUMMARY
+                    self.end_exp = time()
+                    
+                    # excluding anticipations from avg reaction time
+                    self.validate_results = [value for value in self.results if value > 0.15]
+
+                    self.listbox.insert(tk.END, 'Experiment concluded at '+datetime.fromtimestamp(self.end_exp).strftime('%H:%M:%S.%f'))
+                    self.listbox.insert(tk.END, 'Experiment time: '+str(round(self.end_exp - self.start_exp, 3))+' seconds')
+                    self.listbox.insert(tk.END, 'Number of tests: '+str(self.tests))
+                    self.listbox.insert(tk.END, 'Number of errors: '+str(self.errors))
+                    self.listbox.insert(tk.END, 'Number of anticipations: '+str(self.anticipations))
+                    self.listbox.insert(tk.END, 'AVG reaction time: '+str(round(mean(self.validate_results)*1000, 3))+' milliseconds')
+                     
+                    for k, v in self.tests_summary.items():
+                        self.controller.data[k].set(v)                    
+                    
+                    self.controller.data['Experiment end'].set(datetime.fromtimestamp(self.end_exp).strftime('%H:%M:%S.%f'))
+                    self.controller.data['Experiment time'].set(round(self.end_exp - self.start_exp, 3))
+                    self.controller.data['Tests'].set(self.tests)
+                    self.controller.data['Errors'].set(self.errors)
+                    self.controller.data['Anticipations'].set(self.anticipations)
+                    self.controller.data['AVG reaction time'].set(round(mean(self.validate_results)*1000, 3))
+                    
+                    self.tests += 1
+                    
+                except:
+                    threading.Thread(target=press_error).start()
+                    self.errors +=1
+                    self.listbox.insert(tk.END, 'You pressed the Spacebar before the beep! Be patient!')
+                    self.listbox.insert(tk.END, '')
         else:
             pass
                 
-'''class Results(tk.Frame):
-    def __init__(self, parent, controller):       
-        tk.Frame.__init__(self, parent)
-        self.controller = controller
-        #label = tk.Label(self, text="\nResults\n", font=controller.title_font)
-        #label.pack(side="top", fill="x", pady=10)
-        button = ttk.Button(self, text="Plot data!", command=self.getData)
-        button.pack()
-        button2 = ttk.Button(self, text="Go back", command=lambda: controller.show_frame("ReactionTest"))
-        button2.pack(side='bottom')
-        
-        self.data = {}
-        
-    def getData(self):
-        if self.data == {}:
-            
-            for k in self.controller.data.keys():
-                self.data[k] = self.controller.data[k].get()
-
-            self.dati = pd.DataFrame([self.data])
-
-            self.df = self.dati[[column for column in list(self.dati.columns) if 'elapsed' in column]]\
-                .rename(columns={column: int(column.replace("Test ", "").replace(" elapsed", "")) for column in list(self.dati.columns) if 'elapsed' in column})\
-                .T.rename(columns={0: 'Reaction Time'})
-
-            self.figure = plt.Figure(dpi=100)
-            self.ax = self.figure.add_subplot(111)
-            self.line = FigureCanvasTkAgg(self.figure, self)
-            self.line.get_tk_widget().pack(side='top', fill='both', expand=True)
-            self.df.plot(kind='line', legend=True, ax=self.ax, color='b', marker='o', fontsize=10).set_xlim(0, self.df.shape[0]+1)
-            self.ax.set_xticks(self.df.index)
-            self.ax.set_xlabel('Tests')
-            self.ax.set_ylabel('Ms')
-            self.ax.set_title('Reaction Time over Tests')'''
 
 if __name__ == "__main__":
     app = ReactionTimeApp()
