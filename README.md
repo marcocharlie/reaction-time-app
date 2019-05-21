@@ -1,5 +1,5 @@
 # Reaction time app
-A Python multi-class desktop GUI built with Tkinter to measure the reaction time to audio stimuli.
+A Python multi-class desktop GUI built with Tkinter to measure the reaction time to auditory stimuli.
 ## Features
   * insert user data (first name, last name)
   * insert trials to perform
