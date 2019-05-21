@@ -3,6 +3,7 @@ A Python multi-class desktop GUI built with Tkinter to measure the reaction time
 ## Features
   * insert user data (first name, last name)
   * insert trials to perform
+  * choose experiment version
   * press enter to start the experiment
   * press the spacebar as fastest as possible at hearing the sound
   * plot results
