@@ -194,7 +194,7 @@ class ReactionTimeApp(tk.Tk):
             self.saved = True
         
     def popup_about(self):
-        showinfo("About", "This s my Reaction Time App. Try it to measure your reaction time to auditory stimuli!")
+        showinfo("About", "This is my Reaction Time App. Try it to measure your reaction time to auditory stimuli!")
     
     def popup_destroy(self):
         #if askyesno('Esc', 'You are about to close the app. Any unsaved results will be lost!'):
