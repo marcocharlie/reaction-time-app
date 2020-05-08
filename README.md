@@ -9,3 +9,10 @@ A Python multi-class desktop GUI built with Tkinter to measure the reaction time
   * chance to pause and resume the experiment (difficult version only)
   * plot results
   * save results to excel file
+
+## Install
+```
+pyinstaller --onefile —windowed --icon=beepbeep.icns —clean BeepBeep.py
+
+python -m auto_py_to_exe
+```
